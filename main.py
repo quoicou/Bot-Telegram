@@ -16,7 +16,7 @@ def recup_last_link():
 def send_message(link):
     api_key = "INSERER CLE API"
     chat_id = "INSERER CHAT ID"
-    text = f"/!\ Tenez les giga chad /!\ \n Voici une nouvelle news ! \n\n {link}"
+    text = f"/!\ Voici une nouvelle news ! /!\\n\n {link}"
 
     url = f"https://api.telegram.org/bot{api_key}/sendMessage?chat_id={chat_id}&text={text}"
 

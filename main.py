@@ -16,7 +16,7 @@ def update_lien(type, href):
             fichier.write(href)
 
 def recup_lien(type):
-    chemin = "INSERER CHEMIN"
+    chemin = "C://Users//fabi1//PycharmProjects//Bot_Telegram - Copie//lien"
 
     if type == 1:
         with open(f"{chemin}//lien_morning_meeting.txt", "r") as fichier:
@@ -30,14 +30,18 @@ def recup_lien(type):
 def morning_meeting():
     url = "https://www.zonebourse.com/videos/la-chronique-bourse/"
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246"
+    }
+
     heure_debut = datetime.time(8, 00)
     heure_fin = datetime.time(9, 30)
 
     while True:
         heure_actuelle = datetime.datetime.now().time()
 
-        if heure_debut < heure_actuelle < heure_fin:
-            response = requests.get(url)
+        if heure_debut <= heure_actuelle <= heure_fin:
+            response = requests.get(url, headers=headers)
 
             soup = BeautifulSoup(response.content, "html.parser")
 
@@ -46,13 +50,13 @@ def morning_meeting():
             href = link.get("href")
 
             if recup_lien(1) != href:
-                print(f"Nouveau morning meeting trouvé : https://www.zonebourse.com{href}")
+                print(f"Nouveau Morning Meeting trouvé : https://www.zonebourse.com{href}")
                 update_lien(1, href)
                 lien = f"https://www.zonebourse.com{href}"
                 send_message(1, lien)
             else:
                 print("Pas de nouveau Morning Meeting")
-                time.sleep(60)
+                time.sleep(120)
 
         else:
             print("Pas l'heure pour le Morning Meeting")
@@ -77,12 +81,12 @@ def news_morningstar():
         time.sleep(3600)
 
 def send_message(type, link):
-    api_key = "CLE_API"
-    chat_id = "CHAT_ID"
+    api_key = "INSERER API KEY"
+    chat_id = "INSERER CHAT ID"
     if type == 1:
-        text = f"Voici LE MORNING MEETING ! \n\n {link}"
+        text = f"/!\ NEWS /!\ \n Voici LE MORNING MEETING ! \n\n {link}"
     else:
-        text = f"Voici une nouvelle news ! \n\n {link}"
+        text = f"/!\ NEWS /!\ \n Voici une nouvelle news ! \n\n {link}"
 
     url = f"https://api.telegram.org/bot{api_key}/sendMessage?chat_id={chat_id}&text={text}"
 

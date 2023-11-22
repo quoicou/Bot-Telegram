@@ -1,19 +1,156 @@
+from datetime import datetime, timedelta, time
 from bs4 import BeautifulSoup
 import multiprocessing
 import feedparser
+import pandas as pd
 import requests
-import time
-import datetime
+import time as sleep_time
 
-def update_lien(type, href):
-    chemin = "INSERER CHEMIN"
+def get_api_key():
+    api_key = "INSERER API KEY"
 
-    if type == 1:
-        with open(f"{chemin}//lien_morning_meeting.txt", "w") as fichier:
-            fichier.write(href)
-    else:
-        with open(f"{chemin}//lien_morningstar.txt", "w") as fichier:
-            fichier.write(href)
+    return api_key
+
+def get_chat_id():
+    chat_id = "INSERER CHAT_ID" #c'est 9
+
+    return chat_id
+
+def get_heure_actuelle():
+    heure_actuelle = datetime.now().time()
+
+    return heure_actuelle
+
+def date_demain():
+    # Obtenir la date de demain
+    date_demain = datetime.now() + timedelta(days=1)
+
+    # Jour de la semaine en français
+    jours = ["LUNDI", "MARDI", "MERCREDI", "JEUDI", "VENDREDI", "SAMEDI", "DIMANCHE"]
+
+    # Mois en français
+    mois = ["JANVIER", "FÉVRIER", "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOÛT", "SEPTEMBRE", "OCTOBRE", "NOVEMBRE",
+            "DÉCEMBRE"]
+
+    # Formater la date
+    date_formatee = "{}{}{}".format(jours[date_demain.weekday()], '{:02d}'.format(date_demain.day), mois[date_demain.month - 1])
+
+    return date_formatee
+
+def date_jour_demain():
+    # Obtenir la date de demain
+    date_demain = datetime.now() + timedelta(days=1)
+
+    # Jour de la semaine en français
+    jours = ["LUNDI", "MARDI", "MERCREDI", "JEUDI", "VENDREDI", "SAMEDI", "DIMANCHE"]
+
+    # Formater la date
+    jour_demain = "{}".format(jours[date_demain.weekday()])
+
+    return jour_demain
+
+def date_demain_jj_mm_aa():
+    date_demain_formattee = (datetime.now() + timedelta(days=1)).strftime("%d/%m/%y")
+
+    return date_demain_formattee
+
+def get_headers():
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246"
+    }
+
+    return headers
+
+def liste_pays():
+    url = "https://www.zonebourse.com/bourse/agenda/economique/"
+
+    mon_dico = {"FR": "🇫🇷", "IT": "🇮🇹", "JP": "🇯🇵", "DE": "🇩🇪", "CH": "🇨🇭", "EU": "🇪🇺", "GB": "🇬🇧", "US": "🇺🇸", "CN": "🇨🇳", "CA": "🇨🇦", "BE": "🇧🇪"}
+
+    # Faire une requête HTTP pour récupérer le contenu de la page
+    response = requests.get(url, headers=get_headers())
+
+    # Parser le contenu de la page avec BeautifulSoup
+    soup = BeautifulSoup(response.content, "html.parser")
+
+    # Trouver toutes les balises <i> sur la page
+    i_tags = soup.find_all("i")
+
+    classes_list = [i["class"] for i in i_tags if "flag__" in ' '.join(i["class"])]
+
+    # Enlever les 30 premiers elements présents dans la bannière du site (inutile pour nous)
+    classes_list = classes_list[30:]
+
+    # Garder les 2 dernieres lettres des pays
+    country_codes = [cls[2][-2:].upper() for cls in classes_list]
+
+    for i in range(len(country_codes)):
+        if country_codes[i] in mon_dico:
+            country_codes[i] = mon_dico[country_codes[i]]
+
+    return country_codes
+
+def agenda_eco():
+    heure_debut = time(17, 00)
+    heure_fin = time(23, 00)
+
+    url = "https://www.zonebourse.com/bourse/agenda/economique/"
+
+    while True:
+        if date_jour_demain() != "SAMEDI" and date_demain() != "DIMANCHE":
+            if heure_debut <= get_heure_actuelle() <= heure_fin:
+
+                tables = pd.read_html(url, encoding='utf-8')
+
+                country_codes = liste_pays()
+
+                # Vérification si des tableaux ont été trouvés
+                if tables:
+                    table = tables[0]
+
+                    table["Pays"] = table["Pays"].astype(str)
+
+                    for i in range(len(country_codes)):
+                        table.loc[i, "Pays"] = country_codes[i]
+
+                    filtered_table = table.loc[table["Unnamed: 0"] == date_demain()]
+
+                    filtered_table_copy = filtered_table.copy()
+                    filtered_table_copy.drop(columns=["Unnamed: 0"], inplace=True)
+                    filtered_table_copy.drop(columns=["Période précédente"], inplace=True)
+
+                    text = format_table(filtered_table_copy)
+
+                    print(text)
+
+                    send_telegram_message(text)
+
+                sleep_time.sleep(86400)
+
+            else:
+                print("Pas l'heure pour l'Agenda Economique")
+                sleep_time.sleep(3600)
+        else:
+            print("Pas d'agenda économique pour le week-end")
+            sleep_time.sleep(86400)
+
+def format_table(table):
+    headers = table.columns
+    formatted_table = []
+    formatted_table.append(f"AGENDA ECONOMIQUE DE DEMAIN ({date_demain_jj_mm_aa()})\n")
+    formatted_table.append("| " + " | ".join(headers) + " |")
+    formatted_table.append("----------------------------------------------------------")
+    for _, row in table.iterrows():
+        formatted_table.append("| " + " | ".join(str(row[col]) for col in headers) + " |\n")
+    return "\n".join(formatted_table)
+
+def send_telegram_message(text):
+    url = f"https://api.telegram.org/bot{get_api_key()}/sendMessage"
+    payload = {
+        "chat_id": get_chat_id(),
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    requests.post(url, json=payload)
 
 def recup_lien(type):
     chemin = "C://Users//fabi1//PycharmProjects//Bot_Telegram - Copie//lien"
@@ -22,30 +159,41 @@ def recup_lien(type):
         with open(f"{chemin}//lien_morning_meeting.txt", "r") as fichier:
             contenu = fichier.read()
             return contenu
-    else:
+    elif type == 2:
         with open(f"{chemin}//lien_morningstar.txt", "r") as fichier:
             contenu = fichier.read()
             return contenu
+    else:
+        with open(f"{chemin}//lien_point_hebdo.txt", "r") as fichier:
+            contenu = fichier.read()
+            return contenu
+
+def update_lien(type, href):
+    chemin = "C://Users//fabi1//PycharmProjects//Bot_Telegram - Copie//lien"
+
+    if type == 1:
+        with open(f"{chemin}//lien_morning_meeting.txt", "w") as fichier:
+            fichier.write(href)
+    elif type == 2:
+        with open(f"{chemin}//lien_morningstar.txt", "w") as fichier:
+            fichier.write(href)
+    else:
+        with open(f"{chemin}//lien_point_hebdo.txt", "w") as fichier:
+            fichier.write(href)
 
 def morning_meeting():
     url = "https://www.zonebourse.com/videos/la-chronique-bourse/"
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246"
-    }
-
-    heure_debut = datetime.time(8, 00)
-    heure_fin = datetime.time(9, 30)
+    heure_debut = time(8, 00)
+    heure_fin = time(9, 30)
 
     while True:
-        heure_actuelle = datetime.datetime.now().time()
-
-        if heure_debut <= heure_actuelle <= heure_fin:
-            response = requests.get(url, headers=headers)
+        if heure_debut <= get_heure_actuelle() <= heure_fin:
+            response = requests.get(url, headers=get_headers())
 
             soup = BeautifulSoup(response.content, "html.parser")
 
-            link = soup.find("a", href=lambda href: href and "/actualite-bourse/" in href and "-44" in href)
+            link = soup.find("a", href=lambda href: href and "/actualite-bourse/" in href and "-4" in href)
 
             href = link.get("href")
 
@@ -56,11 +204,11 @@ def morning_meeting():
                 send_message(1, lien)
             else:
                 print("Pas de nouveau Morning Meeting")
-                time.sleep(120)
+                sleep_time.sleep(120)
 
         else:
             print("Pas l'heure pour le Morning Meeting")
-            time.sleep(3600)
+            sleep_time.sleep(3600)
 
 def news_morningstar():
     feed_url = "https://www.morningstar.fr/fr/news/rss.aspx?lang=fr-FR"
@@ -78,23 +226,79 @@ def news_morningstar():
             send_message(2, href)
         else:
             print("Pas de news de Morningstar")
-        time.sleep(3600)
+
+        sleep_time.sleep(3600)
+
+def dernier_jeudi():
+    # Obtenez la date actuelle
+    aujourd_hui = datetime.now()
+
+    # Calculez le jour de la semaine (0 pour lundi, 1 pour mardi, ..., 6 pour dimanche)
+    jour_semaine = aujourd_hui.weekday()
+
+    # Calculez le nombre de jours à soustraire pour atteindre le dernier jeudi
+    jours_a_soustraire = (jour_semaine - 3) % 7
+
+    # Soustrayez le nombre de jours pour obtenir le dernier jeudi
+    dernier_jeudi = aujourd_hui - timedelta(days=jours_a_soustraire)
+
+    # Formatez la date au format "aaaa-mm-jj"
+    date_formattee = dernier_jeudi.strftime("%Y-%m-%d")
+
+    return date_formattee
+
+def point_hebdo():
+    date = dernier_jeudi()
+
+    query = f"site:www.zonebourse.com/actualite-bourse/Le-point-hebdo-de-l-investisseur after:{date}"
+
+    first_lien = None
+
+    url = f"https://www.google.com/search?q={query}"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"}
+    response = requests.get(url, headers=headers)
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    results = soup.find_all('a')
+
+    for result in results:
+        lien = result.get("href")
+        if not first_lien and "Le-point-hebdo-de-l-investisseur-" in lien:
+            url_recup = (lien.split('&')[0]).replace("/url?q=", "")
+            first_lien = url_recup
+
+    if recup_lien(3) != first_lien:
+        print(f"Nouveau Point Hebdo trouvé : {first_lien}")
+        update_lien(3, first_lien)
+        send_message(3, first_lien)
+
+    else:
+        print("Pas de nouveau Point Hebdo")
+
+    sleep_time.sleep(86400)
 
 def send_message(type, link):
-    api_key = "INSERER API KEY"
-    chat_id = "INSERER CHAT ID"
     if type == 1:
-        text = f"/!\ NEWS /!\ \n Voici LE MORNING MEETING ! \n\n {link}"
+        text = f"/!\ NEWSSSSSS /!\ \n\n Voici LE MORNING MEETING ! \n\n {link}"
+    elif type == 2:
+        text = f"/!\ DORMEZ MOINS CON /!\ \n\n Voici une nouvelle news ! \n\n {link}"
     else:
-        text = f"/!\ NEWS /!\ \n Voici une nouvelle news ! \n\n {link}"
+        text = f"/!\ INSTRUISEZ-VOUS /!\ \n\n Voici le nouveau Point Hebdo de l'Investisseur ! \n\n {link}"
 
-    url = f"https://api.telegram.org/bot{api_key}/sendMessage?chat_id={chat_id}&text={text}"
+    url = f"https://api.telegram.org/bot{get_api_key()}/sendMessage?chat_id={get_chat_id()}&text={text}"
 
     requests.get(url)
 
 if __name__ == '__main__':
     process_1 = multiprocessing.Process(target=news_morningstar)
     process_2 = multiprocessing.Process(target=morning_meeting)
+    process_3 = multiprocessing.Process(target=agenda_eco)
+    process_4 = multiprocessing.Process(target=point_hebdo)
 
     process_1.start()
     process_2.start()
+    process_3.start()
+    process_4.start()

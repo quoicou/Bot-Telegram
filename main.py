@@ -5,6 +5,7 @@ import feedparser
 import pandas as pd
 import requests
 import time as sleep_time
+import fear_and_greed
 
 def get_api_key():
     api_key = "INSERER API KEY"
@@ -12,7 +13,7 @@ def get_api_key():
     return api_key
 
 def get_chat_id():
-    chat_id = "INSERER CHAT_ID" #c'est 9
+    chat_id = "INSERER Chat_id"
 
     return chat_id
 
@@ -116,7 +117,6 @@ def agenda_eco():
 
                     filtered_table_copy = filtered_table.copy()
                     filtered_table_copy.drop(columns=["Unnamed: 0"], inplace=True)
-                    filtered_table_copy.drop(columns=["Période précédente"], inplace=True)
 
                     text = format_table(filtered_table_copy)
 
@@ -137,10 +137,9 @@ def format_table(table):
     headers = table.columns
     formatted_table = []
     formatted_table.append(f"AGENDA ECONOMIQUE DE DEMAIN ({date_demain_jj_mm_aa()})\n")
-    formatted_table.append("| " + " | ".join(headers) + " |")
-    formatted_table.append("----------------------------------------------------------")
+    formatted_table.append(f"Heure | Pays | Event | Last Release\n")
     for _, row in table.iterrows():
-        formatted_table.append("| " + " | ".join(str(row[col]) for col in headers) + " |\n")
+        formatted_table.append(" | ".join(str(row[col]) for col in headers) + "\n")
     return "\n".join(formatted_table)
 
 def send_telegram_message(text):
@@ -153,7 +152,7 @@ def send_telegram_message(text):
     requests.post(url, json=payload)
 
 def recup_lien(type):
-    chemin = "C://Users//fabi1//PycharmProjects//Bot_Telegram - Copie//lien"
+    chemin = "INSERER CHEMIN"
 
     if type == 1:
         with open(f"{chemin}//lien_morning_meeting.txt", "r") as fichier:
@@ -169,7 +168,7 @@ def recup_lien(type):
             return contenu
 
 def update_lien(type, href):
-    chemin = "C://Users//fabi1//PycharmProjects//Bot_Telegram - Copie//lien"
+    chemin = "INSERER CHEMIN"
 
     if type == 1:
         with open(f"{chemin}//lien_morning_meeting.txt", "w") as fichier:
@@ -229,7 +228,25 @@ def news_morningstar():
 
         sleep_time.sleep(3600)
 
-def dernier_jeudi():
+def new_fear_and_greed():
+    heure_debut = time(8, 00)
+    heure_fin = time(23, 00)
+
+    fear_and_greed_value = int(fear_and_greed.get().value)
+
+    while True:
+        if heure_debut <= get_heure_actuelle() <= heure_fin:
+            if fear_and_greed_value > 75:
+                send_message(4, fear_and_greed_value)
+
+            elif fear_and_greed_value < 25:
+                send_message(4, fear_and_greed_value)
+
+            else:
+                print("Rien de particulier sur le Fear & Greed")
+        sleep_time.sleep(86400)
+
+def dernier_vendredi():
     # Obtenez la date actuelle
     aujourd_hui = datetime.now()
 
@@ -237,24 +254,24 @@ def dernier_jeudi():
     jour_semaine = aujourd_hui.weekday()
 
     # Calculez le nombre de jours à soustraire pour atteindre le dernier jeudi
-    jours_a_soustraire = (jour_semaine - 3) % 7
+    jours_a_soustraire = (jour_semaine - 2) % 7
 
     # Soustrayez le nombre de jours pour obtenir le dernier jeudi
-    dernier_jeudi = aujourd_hui - timedelta(days=jours_a_soustraire)
+    dernier_vendredi = aujourd_hui - timedelta(days=jours_a_soustraire)
 
     # Formatez la date au format "aaaa-mm-jj"
-    date_formattee = dernier_jeudi.strftime("%Y-%m-%d")
+    date_formattee = dernier_vendredi.strftime("%Y-%m-%d")
 
     return date_formattee
 
 def point_hebdo():
-    date = dernier_jeudi()
+    date = dernier_vendredi()
 
     query = f"site:www.zonebourse.com/actualite-bourse/Le-point-hebdo-de-l-investisseur after:{date}"
 
-    first_lien = None
-
     url = f"https://www.google.com/search?q={query}"
+
+    first_lien = ""
 
     headers = {
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"}
@@ -266,7 +283,7 @@ def point_hebdo():
 
     for result in results:
         lien = result.get("href")
-        if not first_lien and "Le-point-hebdo-de-l-investisseur-" in lien:
+        if "Le-point-hebdo-de-l-investisseur-" in lien:
             url_recup = (lien.split('&')[0]).replace("/url?q=", "")
             first_lien = url_recup
 
@@ -285,8 +302,10 @@ def send_message(type, link):
         text = f"/!\ NEWSSSSSS /!\ \n\n Voici LE MORNING MEETING ! \n\n {link}"
     elif type == 2:
         text = f"/!\ DORMEZ MOINS CON /!\ \n\n Voici une nouvelle news ! \n\n {link}"
-    else:
+    elif type == 3:
         text = f"/!\ INSTRUISEZ-VOUS /!\ \n\n Voici le nouveau Point Hebdo de l'Investisseur ! \n\n {link}"
+    else:
+        text = f"/!\ FEAR AND GREED du jour : {link} /!\ \n"
 
     url = f"https://api.telegram.org/bot{get_api_key()}/sendMessage?chat_id={get_chat_id()}&text={text}"
 
@@ -297,8 +316,10 @@ if __name__ == '__main__':
     process_2 = multiprocessing.Process(target=morning_meeting)
     process_3 = multiprocessing.Process(target=agenda_eco)
     process_4 = multiprocessing.Process(target=point_hebdo)
+    process_5 = multiprocessing.Process(target=new_fear_and_greed)
 
     process_1.start()
     process_2.start()
     process_3.start()
     process_4.start()
+    process_5.start()

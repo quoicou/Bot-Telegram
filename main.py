@@ -8,12 +8,12 @@ import time as sleep_time
 import fear_and_greed
 
 def get_api_key():
-    api_key = "INSERER API KEY"
+    api_key = "INSEREZ CLE API"
 
     return api_key
 
 def get_chat_id():
-    chat_id = "INSERER Chat_id"
+    chat_id = "INSERER CHAT ID"
 
     return chat_id
 
@@ -65,7 +65,7 @@ def get_headers():
 def liste_pays():
     url = "https://www.zonebourse.com/bourse/agenda/economique/"
 
-    mon_dico = {"FR": "🇫🇷", "IT": "🇮🇹", "JP": "🇯🇵", "DE": "🇩🇪", "CH": "🇨🇭", "EU": "🇪🇺", "GB": "🇬🇧", "US": "🇺🇸", "CN": "🇨🇳", "CA": "🇨🇦", "BE": "🇧🇪"}
+    mon_dico = {"FR": "🇫🇷", "IT": "🇮🇹", "JP": "🇯🇵", "DE": "🇩🇪", "CH": "🇨🇭", "EU": "🇪🇺", "GB": "🇬🇧", "US": "🇺🇸", "CN": "🇨🇳", "CA": "🇨🇦", "BE": "🇧🇪", "ES": "🇪🇸", "NL": "🇳🇱"}
 
     # Faire une requête HTTP pour récupérer le contenu de la page
     response = requests.get(url, headers=get_headers())
@@ -78,9 +78,6 @@ def liste_pays():
 
     classes_list = [i["class"] for i in i_tags if "flag__" in ' '.join(i["class"])]
 
-    # Enlever les 30 premiers elements présents dans la bannière du site (inutile pour nous)
-    classes_list = classes_list[30:]
-
     # Garder les 2 dernieres lettres des pays
     country_codes = [cls[2][-2:].upper() for cls in classes_list]
 
@@ -91,24 +88,31 @@ def liste_pays():
     return country_codes
 
 def agenda_eco():
-    heure_debut = time(17, 00)
+    heure_debut = time(18, 00)
     heure_fin = time(23, 00)
+    date_ajd = datetime.now().strftime('%Y-%m-%d')
 
     url = "https://www.zonebourse.com/bourse/agenda/economique/"
 
     while True:
         if date_jour_demain() != "SAMEDI" and date_demain() != "DIMANCHE":
-            if heure_debut <= get_heure_actuelle() <= heure_fin:
+            if heure_debut <= get_heure_actuelle() <= heure_fin and recup_lien(4) != date_ajd:
 
                 tables = pd.read_html(url, encoding='utf-8')
-
-                country_codes = liste_pays()
 
                 # Vérification si des tableaux ont été trouvés
                 if tables:
                     table = tables[0]
 
                     table["Pays"] = table["Pays"].astype(str)
+
+                    country_codes = liste_pays()
+
+                    elements_en_trop = len(country_codes)-len(table)
+                    print(elements_en_trop)
+
+                    # Enlever les premiers elements présents dans la bannière du site (inutile pour nous)
+                    country_codes = country_codes[elements_en_trop:]
 
                     for i in range(len(country_codes)):
                         table.loc[i, "Pays"] = country_codes[i]
@@ -117,17 +121,20 @@ def agenda_eco():
 
                     filtered_table_copy = filtered_table.copy()
                     filtered_table_copy.drop(columns=["Unnamed: 0"], inplace=True)
+                    filtered_table_copy.drop(columns=["Période précédente"], inplace=True)
 
                     text = format_table(filtered_table_copy)
 
                     print(text)
+
+                    update_lien(4, date_ajd)
 
                     send_telegram_message(text)
 
                 sleep_time.sleep(86400)
 
             else:
-                print("Pas l'heure pour l'Agenda Economique")
+                print("Pas l'heure pour l'Agenda Economique ou déjà publié aujourd'hui")
                 sleep_time.sleep(3600)
         else:
             print("Pas d'agenda économique pour le week-end")
@@ -137,7 +144,7 @@ def format_table(table):
     headers = table.columns
     formatted_table = []
     formatted_table.append(f"AGENDA ECONOMIQUE DE DEMAIN ({date_demain_jj_mm_aa()})\n")
-    formatted_table.append(f"Heure | Pays | Event | Last Release\n")
+    formatted_table.append(f"Heure | Pays | Publication\n")
     for _, row in table.iterrows():
         formatted_table.append(" | ".join(str(row[col]) for col in headers) + "\n")
     return "\n".join(formatted_table)
@@ -162,8 +169,12 @@ def recup_lien(type):
         with open(f"{chemin}//lien_morningstar.txt", "r") as fichier:
             contenu = fichier.read()
             return contenu
-    else:
+    elif type == 3:
         with open(f"{chemin}//lien_point_hebdo.txt", "r") as fichier:
+            contenu = fichier.read()
+            return contenu
+    else:
+        with open(f"{chemin}//date_dernier_agenda_eco.txt", "r") as fichier:
             contenu = fichier.read()
             return contenu
 
@@ -176,8 +187,11 @@ def update_lien(type, href):
     elif type == 2:
         with open(f"{chemin}//lien_morningstar.txt", "w") as fichier:
             fichier.write(href)
-    else:
+    elif type == 3:
         with open(f"{chemin}//lien_point_hebdo.txt", "w") as fichier:
+            fichier.write(href)
+    else:
+        with open(f"{chemin}//date_dernier_agenda_eco.txt", "w") as fichier:
             fichier.write(href)
 
 def morning_meeting():
@@ -230,20 +244,31 @@ def news_morningstar():
 
 def new_fear_and_greed():
     heure_debut = time(8, 00)
-    heure_fin = time(23, 00)
+    heure_fin = time(14, 00)
 
     fear_and_greed_value = int(fear_and_greed.get().value)
 
     while True:
         if heure_debut <= get_heure_actuelle() <= heure_fin:
-            if fear_and_greed_value > 75:
-                send_message(4, fear_and_greed_value)
+            if fear_and_greed_value >= 75:
+                message = f"INDEX : {fear_and_greed_value}\n\nWARNING nous sommes en EXTREME GREED !!!"
+                send_message(4, message)
 
-            elif fear_and_greed_value < 25:
-                send_message(4, fear_and_greed_value)
+            elif fear_and_greed_value >= 70 and fear_and_greed_value < 75:
+                message = f"INDEX : {fear_and_greed_value}\n\nAttention nous approchons du palier : EXTREME GREED"
+                send_message(4, message)
+
+            elif fear_and_greed_value <= 25:
+                message = f"INDEX : {fear_and_greed_value}\n\nWARNING nous sommes en EXTREME FEAR !!!"
+                send_message(4, message)
+
+            elif fear_and_greed_value > 25 and fear_and_greed_value <= 30:
+                message = f"INDEX : {fear_and_greed_value}\n\nAttention nous approchons du palier : EXTREME FEAR"
+                send_message(4, message)
 
             else:
                 print("Rien de particulier sur le Fear & Greed")
+
         sleep_time.sleep(86400)
 
 def dernier_vendredi():
@@ -271,26 +296,27 @@ def point_hebdo():
 
     url = f"https://www.google.com/search?q={query}"
 
-    first_lien = ""
-
     headers = {
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"}
+
     response = requests.get(url, headers=headers)
 
     soup = BeautifulSoup(response.text, "html.parser")
 
     results = soup.find_all('a')
 
+    lien_hebdo = None
+
     for result in results:
         lien = result.get("href")
         if "Le-point-hebdo-de-l-investisseur-" in lien:
-            url_recup = (lien.split('&')[0]).replace("/url?q=", "")
-            first_lien = url_recup
+            lien_hebdo = (lien.split('&')[0]).replace("/url?q=", "")
 
-    if recup_lien(3) != first_lien:
-        print(f"Nouveau Point Hebdo trouvé : {first_lien}")
-        update_lien(3, first_lien)
-        send_message(3, first_lien)
+    if lien_hebdo != None:
+        if recup_lien(3) != lien_hebdo:
+            print(f"Nouveau Point Hebdo trouvé : {lien_hebdo}")
+            update_lien(3, lien_hebdo)
+            send_message(3, lien_hebdo)
 
     else:
         print("Pas de nouveau Point Hebdo")
@@ -299,13 +325,13 @@ def point_hebdo():
 
 def send_message(type, link):
     if type == 1:
-        text = f"/!\ NEWSSSSSS /!\ \n\n Voici LE MORNING MEETING ! \n\n {link}"
+        text = f"/!\ NEWSSSSSS /!\ \n\nVoici LE MORNING MEETING ! \n\n {link}"
     elif type == 2:
-        text = f"/!\ DORMEZ MOINS CON /!\ \n\n Voici une nouvelle news ! \n\n {link}"
+        text = f"/!\ INFORMATION /!\ \n\nVoici une nouvelle news ! \n\n {link}"
     elif type == 3:
-        text = f"/!\ INSTRUISEZ-VOUS /!\ \n\n Voici le nouveau Point Hebdo de l'Investisseur ! \n\n {link}"
+        text = f"/!\ INSTRUISEZ-VOUS /!\ \n\nVoici le nouveau Point Hebdo de l'Investisseur ! \n\n {link}"
     else:
-        text = f"/!\ FEAR AND GREED du jour : {link} /!\ \n"
+        text = f"/!\ FEAR AND GREED /!\ \n\n{link}\n"
 
     url = f"https://api.telegram.org/bot{get_api_key()}/sendMessage?chat_id={get_chat_id()}&text={text}"
 

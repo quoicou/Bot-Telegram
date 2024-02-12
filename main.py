@@ -5,9 +5,11 @@ import pandas as pd
 import requests
 import time as sleep_time
 import fear_and_greed
+import yfinance as yf
+import pytz
 
 def get_api_key():
-    api_key = "INSERER API"
+    api_key = "INSERER CLE"
 
     return api_key
 
@@ -18,13 +20,14 @@ def get_chat_id():
 
 def get_headers():
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246"
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15'
     }
 
     return headers
 
 def get_heure_actuelle():
-    heure_actuelle = datetime.now().time()
+    paris_tz = pytz.timezone('Europe/Paris')
+    heure_actuelle = datetime.now(paris_tz).time()
 
     return heure_actuelle
 
@@ -90,7 +93,7 @@ def liste_pays():
 
 def agenda_eco():
     heure_debut = time(17, 00)
-    heure_fin = time(19, 00)
+    heure_fin = time(21, 00)
     date_ajd = datetime.now().strftime('%Y-%m-%d')
 
     url = "https://www.zonebourse.com/bourse/agenda/economique/"
@@ -98,6 +101,9 @@ def agenda_eco():
     while True:
         if date_jour_demain() != "SAMEDI" and date_jour_demain() != "DIMANCHE":
             if heure_debut <= get_heure_actuelle() <= heure_fin and recup_lien(4) != date_ajd:
+
+                response = requests.get(url, headers=get_headers())
+                url = response.text
 
                 tables = pd.read_html(url, encoding='utf-8')
 
@@ -110,6 +116,7 @@ def agenda_eco():
                     country_codes = liste_pays()
 
                     elements_en_trop = len(country_codes)-len(table)
+                    #print(elements_en_trop)
 
                     # Enlever les premiers elements présents dans la bannière du site (inutile pour nous)
                     country_codes = country_codes[elements_en_trop:]
@@ -202,19 +209,51 @@ def send_message_morning_meeting(link):
 
 ### POINT QUOTIDIEN
 
+def get_headers_veille():
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36'
+    }
+
+    return headers
+
 def veille_quotidienne():
     heure_debut = time(17, 00)
     heure_fin = time(21, 00)
 
     while True:
-        if heure_debut <= get_heure_actuelle() <= heure_fin:
+        if date_jour_demain() != "DIMANCHE" and date_jour_demain() != "LUNDI":
+            if heure_debut <= get_heure_actuelle() <= heure_fin:
 
-            send_message_veille_quotidienne(new_fear_and_greed(), yield_us(), yield_eu())
+                send_message_veille_quotidienne(new_fear_and_greed(), yield_us(), yield_eu(), vix_update())
 
-            sleep_time.sleep(86400)
+                sleep_time.sleep(86400)
+            else:
+                print("Pas l'heure pour Veille Quotidienne")
+                sleep_time.sleep(3600)
+
+        print("Pas le jour pour Veille Quotidienne")
+        sleep_time.sleep(86400)
+
+def vix_update():
+    # Objet Ticker pour le VIX (symbole : ^VIX)
+    vix_ticker = yf.Ticker("^VIX")
+
+    # Historique du VIX DataFrame
+    vix_history = vix_ticker.history(period="1y")
+
+    update = f"{vix_history.Close.to_list()[-1]:.2f}"
+
+    variation = vix_history.Close.to_list()[-1] - vix_history.Close.to_list()[-2]
+
+    if variation != 0:
+        if variation > 0:
+            result = f'{update} (➕{variation:.2f})'
         else:
-            print("Pas l'heure pour Veille Quotidienne")
-            sleep_time.sleep(3600)
+            result = f'{update} (➖{float(str(variation).replace("-", "")):.2f})'
+    else:
+        result = f'{update} (➕0%)'
+
+    return result
 
 def new_fear_and_greed():
     fear_and_greed_value = int(fear_and_greed.get().value)
@@ -223,10 +262,11 @@ def new_fear_and_greed():
 
 def yield_us():
     liste_yield = []
+    taux_us = 0
 
     url = 'https://www.bloomberg.com/markets/rates-bonds'
 
-    response = requests.get(url, headers=get_headers())
+    response = requests.get(url, headers=get_headers_veille())
 
     soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -235,7 +275,22 @@ def yield_us():
     for value in all_values:
         liste_yield.append(value.text)
 
-    return liste_yield[20]
+    taux_us_transfo = int(liste_yield[21].replace('+', '').replace('-', ''))
+
+    if taux_us_transfo >= 10:
+        taux_us = f'0.{taux_us_transfo}'
+    else:
+        taux_us = f'0.0{taux_us_transfo}'
+
+    if taux_us_transfo != 0:
+        if liste_yield[21][0] == "+":
+            taux_us = f'{liste_yield[20]} (➕{taux_us}%)'
+        else:
+            taux_us = f'{liste_yield[20]} (➖{taux_us}%)'
+    else:
+        taux_us = f'{liste_yield[20]}% (➕0%)'
+
+    return taux_us
 
 def yield_eu():
     liste_yield = []
@@ -251,14 +306,28 @@ def yield_eu():
     for value in all_values:
         liste_yield.append(value.text)
 
-    eu_yield = liste_yield[0].replace(',', '.').replace(' ', '')
+    eu_yield = liste_yield[0].replace(',', '.').replace(' ', '').replace('%', '')
 
-    return eu_yield
+    eu_yield_j_1 = liste_yield[1].replace(',', '.').replace(' ', '').replace('%', '')
 
-def send_message_veille_quotidienne(f_et_g, us_yield, eu_yield):
-    text = f"⚠️ VEILLE QUOTIDIENNE ⚠️\n\n▶️ Fear N' Greed : {f_et_g}\n\n▶️ US Yield : {us_yield}\n\n▶️ EU Yield {eu_yield}\n\n🚧 Attente du VIX\n\n🚧 Attente des variations SP500/Nasdaq/CAC/DAX\n\n🚧 Attente des variations cryptos"
+    diff = float(eu_yield) - float(eu_yield_j_1)
 
-    url = f"https://api.telegram.org/bot{get_api_key()}/sendMessage?chat_id={get_chat_id()}&text={text}"
+    if diff >= 0:
+        diff = f'➕{diff:.3f}%'
+    else:
+        diff = float(str(diff).replace('-', ''))
+        diff = f'➖{diff:.3f}%'
+
+    eu_yield = f'{eu_yield}% ({diff})'
+
+    return(eu_yield)
+
+def send_message_veille_quotidienne(f_et_g, us_yield, eu_yield, vix_variation):
+    text = f"⚠️ VEILLE QUOTIDIENNE ⚠️\n\n▶️ Fear N' Greed : {f_et_g}\n\n▶️ Taux US* : {us_yield}\n\n▶️ Taux EU** : {eu_yield}\n\n▶️ VIX : {vix_variation}\n\n🚧 Attente des variations SP500/Nasdaq/CAC/DAX\n\n🚧 Attente des variations cryptos\n\n*10-Year Government Bond Yields\n**EURIBOR 3 mois"
+
+    print(text)
+
+    url = f"https://api.telegram.org/bot{get_api_key()}/sendMessage?chat_id={get_chat_id()}&text={text}&silent=True"
 
     requests.get(url)
 
@@ -267,25 +336,21 @@ def send_message_veille_quotidienne(f_et_g, us_yield, eu_yield):
 ### GESTION FICHIER
 
 def recup_lien(type):
-    chemin = "INSERER CHEMIN"
-
     if type == 1:
-        with open(f"{chemin}//lien_morning_meeting.txt", "r") as fichier:
+        with open(f"lien_morning_meeting.txt", "r") as fichier:
             contenu = fichier.read()
             return contenu
     else:
-        with open(f"{chemin}//date_dernier_agenda_eco.txt", "r") as fichier:
+        with open(f"date_dernier_agenda_eco.txt", "r") as fichier:
             contenu = fichier.read()
             return contenu
 
 def update_lien(type, href):
-    chemin = "INSERER CHEMIN"
-
     if type == 1:
-        with open(f"{chemin}//lien_morning_meeting.txt", "w") as fichier:
+        with open(f"lien_morning_meeting.txt", "w") as fichier:
             fichier.write(href)
     else:
-        with open(f"{chemin}//date_dernier_agenda_eco.txt", "w") as fichier:
+        with open(f"date_dernier_agenda_eco.txt", "w") as fichier:
             fichier.write(href)
 
 ### FIN GESTION FICHIER
